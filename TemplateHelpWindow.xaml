@@ -1,0 +1,45 @@
+<Window x:Class="seriel_number_generator.TemplateHelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Hjælp: Variabler i Vektor Skabeloner" Height="520" Width="680"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Titel & Info -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="Oversigt over skabelon-pladsholdere (Tokens)" FontSize="16" FontWeight="Bold"/>
+            <TextBlock Text="Indsæt teksten præcis som vist i dine SVG/vektor-tekstfelter. Programmet udskifter dem automatisk ved generering." 
+                       TextWrapping="Wrap" Foreground="#4B5563" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- Tabel over variabler -->
+        <DataGrid x:Name="GridTokens" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" 
+                  HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeight="32">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Pladsholder (Token)" Binding="{Binding Token}" Width="190" FontWeight="Bold"/>
+                <DataGridTextColumn Header="Kilde / Forklaring" Binding="{Binding Description}" Width="260"/>
+                <DataGridTextColumn Header="Eksempel" Binding="{Binding Example}" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Tips boks -->
+        <Border Grid.Row="2" Background="#F3F4F6" CornerRadius="4" Padding="10" Margin="0,12,0,12">
+            <StackPanel>
+                <TextBlock Text="Vigtigt ved brug i Adobe Illustrator / Inkscape:" FontWeight="Bold" Margin="0,0,0,4"/>
+                <TextBlock Text="• Konverter IKKE tekst til konturer/kurver (Create Outlines) i skabelonen – teksten skal forblive redigerbar tekst." FontSize="11" Margin="0,1"/>
+                <TextBlock Text="• Både &lt;&lt;felt&gt;&gt; og Illustrators automatisk kodede &amp;lt;&amp;lt;felt&amp;gt;&amp;gt; understøttes automatisk." FontSize="11" Margin="0,1"/>
+                <TextBlock Text="• Skriv hele tagget i ét sammenhængende tekstfelt uden formateringsskift midt i ordet." FontSize="11" Margin="0,1"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Luk knap -->
+        <Button Grid.Row="3" Content="Luk" Width="80" Height="28" HorizontalAlignment="Right" 
+                IsCancel="True" Click="BtnClose_Click" Cursor="Hand"/>
+    </Grid>
+</Window>

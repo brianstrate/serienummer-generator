@@ -1,0 +1,17 @@
+## Build og output
+bin/
+obj/
+publish/
+OutputInstaller/
+
+## Visual Studio & VS Code indstillinger
+.vs/
+.vscode/
+*.user
+
+## Lokale databaser og output-filer
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+output/
