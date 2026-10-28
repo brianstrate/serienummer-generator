@@ -129,10 +129,10 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
             {
                 using var checkCmd = new SqliteCommand("INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('output_folder', 'output', 'Standard output mappe til vektorfiler', 1, datetime('now'));", conn);
                 checkCmd.ExecuteNonQuery();
-                using var checkFormatCmd = new SqliteCommand(
-    "INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('output_format', 'svg', 'Output format (svg, pdf, png)', 1, datetime('now'));", 
-    conn);
-checkFormatCmd.ExecuteNonQuery();
+                using var checkFormatCmd = new SqliteCommand("INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('output_format', 'svg', 'Output format (svg, pdf, png)', 1, datetime('now'));",conn);
+                checkFormatCmd.ExecuteNonQuery();
+                using var checkDpiCmd = new SqliteCommand("INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('png_dpi', '300', 'DPI for PNG eksport (f.eks. 96, 300, 600)', 1, datetime('now'));", conn);
+                checkDpiCmd.ExecuteNonQuery();
             }
             catch { }
 
@@ -217,6 +217,8 @@ checkFormatCmd.ExecuteNonQuery();
         {
             string year = TxtYear.Text.Trim();
             string month = CmbMonth.SelectedValue?.ToString() ?? "";
+            string rawTemp = ((dynamic)CmbWashTemp.SelectedItem).Temp;
+            string formattedTemp = FormatWashTemp(rawTemp);
 
             if (year.Length != 4 || !int.TryParse(year, out _) || string.IsNullOrEmpty(month))
             {
@@ -274,18 +276,18 @@ checkFormatCmd.ExecuteNonQuery();
                         cmd.ExecuteNonQuery();
                     }
 
-                    GenerateOutput(templatePath, new Dictionary<string, string>
-                    {
-                        { "<<serienumber>>", serialNum },
-                        { "<<standard>>", ((dynamic)CmbStandard.SelectedItem).Name },
-                        { "<<udi>>", ((dynamic)CmbUdi.SelectedItem).Udi },
-                        { "<<ref>>", ((dynamic)CmbRef.SelectedItem).Ref },
-                        { "<<raps_batch>>", ((dynamic)CmbRaps.SelectedItem).Batch },
-                        { "<<textile_batch>>", ((dynamic)CmbTextile.SelectedItem).Batch },
-                        { "<<wash_temp>>", ((dynamic)CmbWashTemp.SelectedItem).Temp },
-                        { "<<created>>", now },
-                        { "<<note>>", TxtSerialNote.Text.Trim() }
-                    }, serialNum);
+                   GenerateOutput(templatePath, new Dictionary<string, string>
+{
+    { "<<serienumber>>", serialNum },
+    { "<<standard>>", ((dynamic)CmbStandard.SelectedItem).Name },
+    { "<<udi>>", ((dynamic)CmbUdi.SelectedItem).Udi },
+    { "<<ref>>", ((dynamic)CmbRef.SelectedItem).Ref },
+    { "<<raps_batch>>", ((dynamic)CmbRaps.SelectedItem).Batch },
+    { "<<textile_batch>>", ((dynamic)CmbTextile.SelectedItem).Batch },
+    { "<<wash_temp>>", formattedTemp }, // Formateret med °C
+    { "<<created>>", now },
+    { "<<note>>", TxtSerialNote.Text.Trim() }
+}, serialNum);
                 }
 
                 transaction.Commit();
@@ -368,19 +370,30 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
             document.Close();
         }
         else if (format == "png")
-        {
-            // Højopløsnings rasterbillede (PNG)
-            using var bitmap = new SKBitmap(width, height);
-            using var canvas = new SKCanvas(bitmap);
-            canvas.Clear(SKColors.Transparent);
-            canvas.DrawPicture(svg.Picture);
-            canvas.Flush();
+{
+    float targetDpi = GetPngDpi();
+    const float baseDpi = 96f; // Standard skærmopløsning for SVG
+    float scale = targetDpi / baseDpi;
 
-            using var image = SKImage.FromBitmap(bitmap);
-            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-            using var fileStream = File.Create(outPath);
-            data.SaveTo(fileStream);
-        }
+    // Beregn de nye dimensioner i fuld opløsning
+    int pixelWidth = (int)Math.Ceiling(bounds.Width * scale);
+    int pixelHeight = (int)Math.Ceiling(bounds.Height * scale);
+
+    var info = new SKImageInfo(pixelWidth, pixelHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
+    using var bitmap = new SKBitmap(info);
+    using var canvas = new SKCanvas(bitmap);
+
+    // Skaler tegnelaget så hele vektorgrafikken renderes skarpt i 300 DPI
+    canvas.Clear(SKColors.Transparent);
+    canvas.Scale(scale);
+    canvas.DrawPicture(svg.Picture);
+    canvas.Flush();
+
+    using var image = SKImage.FromBitmap(bitmap);
+    using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+    using var fileStream = File.Create(outPath);
+    data.SaveTo(fileStream);
+}
     }
 }
         // --- STAMDATA & HJÆLPEFUNKTIONER ---
@@ -680,19 +693,22 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
             string serialNum = TxtEditSerialNum.Text;
             var templateItem = (dynamic)CmbEditTemplate.SelectedItem;
             string templatePath = templateItem.TemplateFile;
-
+            string rawTemp = CmbEditWashTemp.SelectedItem != null 
+            ? ((dynamic)CmbEditWashTemp.SelectedItem).Temp 
+            : "";
+            string formattedTemp = FormatWashTemp(rawTemp);
             GenerateOutput(templatePath, new Dictionary<string, string>
-            {
-                { "<<serienumber>>", serialNum },
-                { "<<standard>>", CmbEditStandard.SelectedItem != null ? ((dynamic)CmbEditStandard.SelectedItem).Name : "" },
-                { "<<udi>>", CmbEditUdi.SelectedItem != null ? ((dynamic)CmbEditUdi.SelectedItem).Udi : "" },
-                { "<<ref>>", CmbEditRef.SelectedItem != null ? ((dynamic)CmbEditRef.SelectedItem).Ref : "" },
-                { "<<raps_batch>>", CmbEditRaps.SelectedItem != null ? ((dynamic)CmbEditRaps.SelectedItem).Batch : "" },
-                { "<<textile_batch>>", CmbEditTextile.SelectedItem != null ? ((dynamic)CmbEditTextile.SelectedItem).Batch : "" },
-                { "<<wash_temp>>", CmbEditWashTemp.SelectedItem != null ? ((dynamic)CmbEditWashTemp.SelectedItem).Temp : "" },
-                { "<<created>>", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") },
-                { "<<note>>", TxtEditSerialNote.Text.Trim() }
-            }, serialNum);
+{
+    { "<<serienumber>>", serialNum },
+    { "<<standard>>", CmbEditStandard.SelectedItem != null ? ((dynamic)CmbEditStandard.SelectedItem).Name : "" },
+    { "<<udi>>", CmbEditUdi.SelectedItem != null ? ((dynamic)CmbEditUdi.SelectedItem).Udi : "" },
+    { "<<ref>>", CmbEditRef.SelectedItem != null ? ((dynamic)CmbEditRef.SelectedItem).Ref : "" },
+    { "<<raps_batch>>", CmbEditRaps.SelectedItem != null ? ((dynamic)CmbEditRaps.SelectedItem).Batch : "" },
+    { "<<textile_batch>>", CmbEditTextile.SelectedItem != null ? ((dynamic)CmbEditTextile.SelectedItem).Batch : "" },
+    { "<<wash_temp>>", formattedTemp }, // Formateret med °C
+    { "<<created>>", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") },
+    { "<<note>>", TxtEditSerialNote.Text.Trim() }
+}, serialNum);
 
             string outFolder = GetOutputFolder();
             var resDialog = new ResultDialog($"Vektorfil for {serialNum} blev genskabt!", outFolder) { Owner = this };
@@ -823,6 +839,42 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
     return "svg";
 }
 
+        private string FormatWashTemp(string? rawTemp)
+        {
+            if (string.IsNullOrWhiteSpace(rawTemp)) return "";
+
+            string trimmed = rawTemp.Trim();
+
+            // Hvis den allerede indeholder grader-tegnet, beholdes den som den er
+            if (trimmed.Contains("°")) return trimmed;
+
+            // Hvis den slutter på C (f.eks. "60C"), indsættes ° før C -> "60°C"
+            if (trimmed.EndsWith("C", StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed.Substring(0, trimmed.Length - 1).TrimEnd() + "°C";
+            }
+
+            // Hvis det bare er et tal eller tekst (f.eks. "60"), tilføjes "°C"
+            return $"{trimmed}°";
+        }
+        private float GetPngDpi()
+        {
+            try
+            {
+                using var conn = new SqliteConnection(_connectionString);
+                conn.Open();
+
+                using var cmd = new SqliteCommand("SELECT value FROM settings WHERE key = 'png_dpi' LIMIT 1;", conn);
+                var res = cmd.ExecuteScalar();
+                if (res != null && float.TryParse(res.ToString(), out float dpi) && dpi > 0)
+                {
+                    return dpi;
+                }
+            }
+            catch { }
+
+            return 300f; // Standard printopløsning
+        }
         private string EscapeCsvField(string field)
         {
             if (string.IsNullOrEmpty(field)) return "";
