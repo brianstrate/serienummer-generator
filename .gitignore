@@ -15,3 +15,5 @@ OutputInstaller/
 *.db-wal
 *.db-shm
 output/
+
+huskeliste.txt
