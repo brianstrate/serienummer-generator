@@ -2,12 +2,12 @@
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Data.Sqlite;
 using Microsoft.Win32;
-using System.Reflection;
 using SkiaSharp;
 using Svg.Skia;
 
@@ -16,22 +16,23 @@ namespace seriel_number_generator
     public partial class MainWindow : Window
     {
         private readonly string _connectionString;
+        private DataTable _serialsTable = new();
 
         public MainWindow()
         {
             InitializeComponent();
 
             // Hent versionsnummer fra assembly (udfyldes automatisk af MinVer)
-    var assembly = Assembly.GetExecutingAssembly();
-    var version = assembly.GetName().Version;
-    
-    // Formater versionsnummeret (f.eks. v1.1.0)
-    string appVersion = version != null 
-        ? $"v{version.Major}.{version.Minor}.{version.Build}" 
-        : "v1.0.0";
+            var assembly = Assembly.GetExecutingAssembly();
+            var version = assembly.GetName().Version;
+            
+            // Formater versionsnummeret (f.eks. v1.1.0)
+            string appVersion = version != null 
+                ? $"v{version.Major}.{version.Minor}.{version.Build}" 
+                : "v1.0.0";
 
-    // Opdater titellinjen dynamisk
-    this.Title = $"Produktion & Serienummer Generator - {appVersion}";
+            // Opdater titellinjen dynamisk
+            this.Title = $"Produktion & Serienummer Generator - {appVersion}";
 
             // Gemmer databasen i ProgramData så programmet virker uden admin-rettigheder efter installation
             string commonFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
@@ -53,8 +54,9 @@ namespace seriel_number_generator
             LoadLastUsedData();
             LoadRecentSerials();
             LoadSerialsGrid();
+
             // Kører i baggrunden uden at blokere opstarten af brugerfladen
-_ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
+            _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
         }
 
         private void PopulateMonthDropdown()
@@ -106,6 +108,8 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
                 @"CREATE TABLE IF NOT EXISTS serial (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, 
                     seriel_num TEXT NOT NULL UNIQUE, 
+                    customer_name TEXT,
+                    customer_phone TEXT,
                     standard_id INTEGER, 
                     udi_id INTEGER, 
                     ref_id INTEGER, 
@@ -129,17 +133,34 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
             {
                 using var checkCmd = new SqliteCommand("INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('output_folder', 'output', 'Standard output mappe til vektorfiler', 1, datetime('now'));", conn);
                 checkCmd.ExecuteNonQuery();
-                using var checkFormatCmd = new SqliteCommand("INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('output_format', 'svg', 'Output format (svg, pdf, png)', 1, datetime('now'));",conn);
+
+                using var checkFormatCmd = new SqliteCommand("INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('output_format', 'svg', 'Output format (svg, pdf, png)', 1, datetime('now'));", conn);
                 checkFormatCmd.ExecuteNonQuery();
+
                 using var checkDpiCmd = new SqliteCommand("INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('png_dpi', '300', 'DPI for PNG eksport (f.eks. 96, 300, 600)', 1, datetime('now'));", conn);
                 checkDpiCmd.ExecuteNonQuery();
             }
             catch { }
 
+            // Sikrer bagudkompatibilitet hvis kolonner mangler i en ældre database
             try
             {
                 using var alterCmd = new SqliteCommand("ALTER TABLE serial ADD COLUMN wash_temp_id INTEGER;", conn);
                 alterCmd.ExecuteNonQuery();
+            }
+            catch { }
+
+            try
+            {
+                using var alterCmd1 = new SqliteCommand("ALTER TABLE serial ADD COLUMN customer_name TEXT;", conn);
+                alterCmd1.ExecuteNonQuery();
+            }
+            catch { }
+
+            try
+            {
+                using var alterCmd2 = new SqliteCommand("ALTER TABLE serial ADD COLUMN customer_phone TEXT;", conn);
+                alterCmd2.ExecuteNonQuery();
             }
             catch { }
         }
@@ -161,6 +182,65 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
             catch { }
 
             return "output";
+        }
+
+        private string GetOutputFormat()
+        {
+            try
+            {
+                using var conn = new SqliteConnection(_connectionString);
+                conn.Open();
+
+                using var cmd = new SqliteCommand("SELECT value FROM settings WHERE key = 'output_format' LIMIT 1;", conn);
+                var res = cmd.ExecuteScalar();
+                if (res != null && !string.IsNullOrWhiteSpace(res.ToString()))
+                {
+                    string fmt = res.ToString()!.Trim().ToLowerInvariant();
+                    if (fmt == "pdf" || fmt == "png" || fmt == "svg")
+                        return fmt;
+                }
+            }
+            catch { }
+
+            return "svg";
+        }
+
+        private float GetPngDpi()
+        {
+            try
+            {
+                using var conn = new SqliteConnection(_connectionString);
+                conn.Open();
+
+                using var cmd = new SqliteCommand("SELECT value FROM settings WHERE key = 'png_dpi' LIMIT 1;", conn);
+                var res = cmd.ExecuteScalar();
+                if (res != null && float.TryParse(res.ToString(), out float dpi) && dpi > 0)
+                {
+                    return dpi;
+                }
+            }
+            catch { }
+
+            return 300f;
+        }
+
+        private string FormatWashTemp(string? rawTemp)
+        {
+            if (string.IsNullOrWhiteSpace(rawTemp)) return "";
+
+            string trimmed = rawTemp.Trim();
+
+            // Hvis den allerede har grader-tegnet
+            if (trimmed.Contains("°")) return trimmed;
+
+            // Hvis den slutter på C (f.eks. "60C"), indsættes ° før C -> "60°C"
+            if (trimmed.EndsWith("C", StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed.Substring(0, trimmed.Length - 1).TrimEnd() + "°C";
+            }
+
+            // Standard: tilføj °C
+            return $"{trimmed}°C";
         }
 
         private void LoadLastUsedData()
@@ -217,8 +297,6 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
         {
             string year = TxtYear.Text.Trim();
             string month = CmbMonth.SelectedValue?.ToString() ?? "";
-            string rawTemp = ((dynamic)CmbWashTemp.SelectedItem).Temp;
-            string formattedTemp = FormatWashTemp(rawTemp);
 
             if (year.Length != 4 || !int.TryParse(year, out _) || string.IsNullOrEmpty(month))
             {
@@ -252,6 +330,9 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
                 string now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
                 string lastCreatedSerial = "";
 
+                string rawTemp = ((dynamic)CmbWashTemp.SelectedItem).Temp;
+                string formattedTemp = FormatWashTemp(rawTemp);
+
                 string insertSql = @"INSERT INTO serial 
                     (seriel_num, standard_id, udi_id, ref_id, rasp_id, textile_id, wash_temp_id, template_id, note, active, created)
                     VALUES (@sn, @std, @udi, @ref, @raps, @txt, @wash, @tmpl, @note, 1, @now);";
@@ -276,18 +357,18 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
                         cmd.ExecuteNonQuery();
                     }
 
-                   GenerateOutput(templatePath, new Dictionary<string, string>
-{
-    { "<<serienumber>>", serialNum },
-    { "<<standard>>", ((dynamic)CmbStandard.SelectedItem).Name },
-    { "<<udi>>", ((dynamic)CmbUdi.SelectedItem).Udi },
-    { "<<ref>>", ((dynamic)CmbRef.SelectedItem).Ref },
-    { "<<raps_batch>>", ((dynamic)CmbRaps.SelectedItem).Batch },
-    { "<<textile_batch>>", ((dynamic)CmbTextile.SelectedItem).Batch },
-    { "<<wash_temp>>", formattedTemp }, // Formateret med °C
-    { "<<created>>", now },
-    { "<<note>>", TxtSerialNote.Text.Trim() }
-}, serialNum);
+                    GenerateOutput(templatePath, new Dictionary<string, string>
+                    {
+                        { "<<serienumber>>", serialNum },
+                        { "<<standard>>", ((dynamic)CmbStandard.SelectedItem).Name },
+                        { "<<udi>>", ((dynamic)CmbUdi.SelectedItem).Udi },
+                        { "<<ref>>", ((dynamic)CmbRef.SelectedItem).Ref },
+                        { "<<raps_batch>>", ((dynamic)CmbRaps.SelectedItem).Batch },
+                        { "<<textile_batch>>", ((dynamic)CmbTextile.SelectedItem).Batch },
+                        { "<<wash_temp>>", formattedTemp },
+                        { "<<created>>", now },
+                        { "<<note>>", TxtSerialNote.Text.Trim() }
+                    }, serialNum);
                 }
 
                 transaction.Commit();
@@ -297,8 +378,8 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
 
                 string outFolder = GetOutputFolder();
                 string msg = totalToCreate == 1 
-                    ? $"Serienummer {lastCreatedSerial} oprettet og vektorfil gemt!" 
-                    : $"{totalToCreate} serienumre oprettet (til og med {lastCreatedSerial}) og vektorfiler gemt!";
+                    ? $"Serienummer {lastCreatedSerial} oprettet og fil gemt!" 
+                    : $"{totalToCreate} serienumre oprettet (til og med {lastCreatedSerial}) og filer gemt!";
 
                 var resDialog = new ResultDialog(msg, outFolder) { Owner = this };
                 resDialog.ShowDialog();
@@ -309,93 +390,86 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
             }
         }
 
-    
-
-private void GenerateOutput(string templateFilePath, Dictionary<string, string> tokens, string serialNum)
-{
-    if (!File.Exists(templateFilePath))
-    {
-        MessageBox.Show($"Skabelonfilen '{templateFilePath}' blev ikke fundet.", "Advarsel", MessageBoxButton.OK, MessageBoxImage.Warning);
-        return;
-    }
-
-    // 1. Udskift tokens i SVG-indholdet
-    string svgContent = File.ReadAllText(templateFilePath);
-    foreach (var kvp in tokens)
-    {
-        svgContent = svgContent.Replace(kvp.Key, kvp.Value);
-        string escapedKey = kvp.Key.Replace("<", "&lt;").Replace(">", "&gt;");
-        svgContent = svgContent.Replace(escapedKey, kvp.Value);
-    }
-
-    string targetFolder = GetOutputFolder();
-    Directory.CreateDirectory(targetFolder);
-
-    string format = GetOutputFormat();
-    string outPath = Path.Combine(targetFolder, $"{serialNum}.{format}");
-
-    if (format == "svg")
-    {
-        // Ren SVG eksport
-        File.WriteAllText(outPath, svgContent, Encoding.UTF8);
-    }
-    else
-    {
-        // Indlæs den færdige SVG i Skia-motoren
-        var svg = new SKSvg();
-        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(svgContent)))
+        private void GenerateOutput(string templateFilePath, Dictionary<string, string> tokens, string serialNum)
         {
-            svg.Load(stream);
+            if (!File.Exists(templateFilePath))
+            {
+                MessageBox.Show($"Skabelonfilen '{templateFilePath}' blev ikke fundet.", "Advarsel", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string svgContent = File.ReadAllText(templateFilePath);
+            foreach (var kvp in tokens)
+            {
+                svgContent = svgContent.Replace(kvp.Key, kvp.Value);
+                string escapedKey = kvp.Key.Replace("<", "&lt;").Replace(">", "&gt;");
+                svgContent = svgContent.Replace(escapedKey, kvp.Value);
+            }
+
+            string targetFolder = GetOutputFolder();
+            Directory.CreateDirectory(targetFolder);
+
+            string format = GetOutputFormat();
+            string outPath = Path.Combine(targetFolder, $"{serialNum}.{format}");
+
+            if (format == "svg")
+            {
+                File.WriteAllText(outPath, svgContent, Encoding.UTF8);
+            }
+            else
+            {
+                var svg = new SKSvg();
+                using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(svgContent)))
+                {
+                    svg.Load(stream);
+                }
+
+                if (svg.Picture == null)
+                {
+                    MessageBox.Show("Kunne ikke parse SVG til konvertering.", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                var bounds = svg.Picture.CullRect;
+                int width = (int)Math.Ceiling(bounds.Width);
+                int height = (int)Math.Ceiling(bounds.Height);
+
+                if (format == "pdf")
+                {
+                    using var fileStream = File.Create(outPath);
+                    using var document = SKDocument.CreatePdf(fileStream);
+                    using var canvas = document.BeginPage(width, height);
+                    
+                    canvas.DrawPicture(svg.Picture);
+                    document.EndPage();
+                    document.Close();
+                }
+                else if (format == "png")
+                {
+                    float targetDpi = GetPngDpi();
+                    const float baseDpi = 96f;
+                    float scale = targetDpi / baseDpi;
+
+                    int pixelWidth = (int)Math.Ceiling(bounds.Width * scale);
+                    int pixelHeight = (int)Math.Ceiling(bounds.Height * scale);
+
+                    var info = new SKImageInfo(pixelWidth, pixelHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
+                    using var bitmap = new SKBitmap(info);
+                    using var canvas = new SKCanvas(bitmap);
+
+                    canvas.Clear(SKColors.Transparent);
+                    canvas.Scale(scale);
+                    canvas.DrawPicture(svg.Picture);
+                    canvas.Flush();
+
+                    using var image = SKImage.FromBitmap(bitmap);
+                    using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+                    using var fileStream = File.Create(outPath);
+                    data.SaveTo(fileStream);
+                }
+            }
         }
 
-        if (svg.Picture == null)
-        {
-            MessageBox.Show("Kunne ikke parse SVG til konvertering.", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
-            return;
-        }
-
-        var bounds = svg.Picture.CullRect;
-        int width = (int)Math.Ceiling(bounds.Width);
-        int height = (int)Math.Ceiling(bounds.Height);
-
-        if (format == "pdf")
-        {
-            // Vektor PDF generering
-            using var fileStream = File.Create(outPath);
-            using var document = SKDocument.CreatePdf(fileStream);
-            using var canvas = document.BeginPage(width, height);
-            
-            canvas.DrawPicture(svg.Picture);
-            document.EndPage();
-            document.Close();
-        }
-        else if (format == "png")
-{
-    float targetDpi = GetPngDpi();
-    const float baseDpi = 96f; // Standard skærmopløsning for SVG
-    float scale = targetDpi / baseDpi;
-
-    // Beregn de nye dimensioner i fuld opløsning
-    int pixelWidth = (int)Math.Ceiling(bounds.Width * scale);
-    int pixelHeight = (int)Math.Ceiling(bounds.Height * scale);
-
-    var info = new SKImageInfo(pixelWidth, pixelHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
-    using var bitmap = new SKBitmap(info);
-    using var canvas = new SKCanvas(bitmap);
-
-    // Skaler tegnelaget så hele vektorgrafikken renderes skarpt i 300 DPI
-    canvas.Clear(SKColors.Transparent);
-    canvas.Scale(scale);
-    canvas.DrawPicture(svg.Picture);
-    canvas.Flush();
-
-    using var image = SKImage.FromBitmap(bitmap);
-    using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-    using var fileStream = File.Create(outPath);
-    data.SaveTo(fileStream);
-}
-    }
-}
         // --- STAMDATA & HJÆLPEFUNKTIONER ---
         private void PopulateTableDropdown()
         {
@@ -495,7 +569,7 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
         {
             var dialog = new OpenFolderDialog
             {
-                Title = "Vælg output-mappe til vektorfiler",
+                Title = "Vælg output-mappe til filer",
                 InitialDirectory = Environment.CurrentDirectory
             };
 
@@ -598,10 +672,27 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
             conn.Open();
 
             string sql = @"
-                SELECT s.id, s.seriel_num, std.name as standard, u.udi, r.ref, 
-                       rb.batch as raps_batch, tb.batch as textile_batch, wt.temp as wash_temp,
-                       tmpl.template_file, s.note, s.active, s.created,
-                       s.standard_id, s.udi_id, s.ref_id, s.rasp_id, s.textile_id, s.wash_temp_id, s.template_id
+                SELECT s.id, 
+                       s.seriel_num, 
+                       std.name as standard, 
+                       u.udi, 
+                       r.ref, 
+                       rb.batch as raps_batch, 
+                       tb.batch as textile_batch, 
+                       wt.temp as wash_temp,
+                       COALESCE(s.customer_name, '') as customer_name,
+                       COALESCE(s.customer_phone, '') as customer_phone,
+                       tmpl.template_file, 
+                       COALESCE(s.note, '') as note, 
+                       s.active, 
+                       s.created,
+                       s.standard_id, 
+                       s.udi_id, 
+                       s.ref_id, 
+                       s.rasp_id, 
+                       s.textile_id, 
+                       s.wash_temp_id, 
+                       s.template_id
                 FROM serial s
                 LEFT JOIN standard std ON s.standard_id = std.id
                 LEFT JOIN udi u ON s.udi_id = u.id
@@ -614,9 +705,34 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
 
             using var cmd = new SqliteCommand(sql, conn);
             using var rdr = cmd.ExecuteReader();
-            var dt = new DataTable();
-            dt.Load(rdr);
-            GridSerials.ItemsSource = dt.DefaultView;
+            _serialsTable = new DataTable();
+            _serialsTable.Load(rdr);
+
+            ApplySearchFilter();
+        }
+
+        private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            ApplySearchFilter();
+        }
+
+        private void ApplySearchFilter()
+        {
+            if (_serialsTable == null || _serialsTable.DefaultView == null) return;
+
+            string filter = TxtSearch?.Text?.Trim().Replace("'", "''") ?? "";
+
+            if (string.IsNullOrEmpty(filter))
+            {
+                _serialsTable.DefaultView.RowFilter = "";
+            }
+            else
+            {
+                _serialsTable.DefaultView.RowFilter = 
+                    $"seriel_num LIKE '%{filter}%' OR customer_name LIKE '%{filter}%' OR customer_phone LIKE '%{filter}%'";
+            }
+
+            GridSerials.ItemsSource = _serialsTable.DefaultView;
         }
 
         private void GridSerials_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -624,6 +740,8 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
             if (GridSerials.SelectedItem is DataRowView row)
             {
                 TxtEditSerialNum.Text = row["seriel_num"].ToString();
+                TxtEditCustomerName.Text = row["customer_name"]?.ToString() ?? "";
+                TxtEditCustomerPhone.Text = row["customer_phone"]?.ToString() ?? "";
                 TxtEditSerialNote.Text = row["note"]?.ToString() ?? "";
                 ChkEditSerialActive.IsChecked = Convert.ToInt32(row["active"]) == 1;
 
@@ -660,6 +778,8 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
                     textile_id = @txt, 
                     wash_temp_id = @wash,
                     template_id = @tmpl, 
+                    customer_name = @cname,
+                    customer_phone = @cphone,
                     note = @note, 
                     active = @active
                 WHERE id = @id;";
@@ -672,6 +792,8 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
             cmd.Parameters.AddWithValue("@txt", (int)(CmbEditTextile.SelectedValue ?? 0));
             cmd.Parameters.AddWithValue("@wash", (int)(CmbEditWashTemp.SelectedValue ?? 0));
             cmd.Parameters.AddWithValue("@tmpl", (int)(CmbEditTemplate.SelectedValue ?? 0));
+            cmd.Parameters.AddWithValue("@cname", TxtEditCustomerName.Text.Trim());
+            cmd.Parameters.AddWithValue("@cphone", TxtEditCustomerPhone.Text.Trim());
             cmd.Parameters.AddWithValue("@note", TxtEditSerialNote.Text.Trim());
             cmd.Parameters.AddWithValue("@active", active);
             cmd.Parameters.AddWithValue("@id", id);
@@ -693,25 +815,27 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
             string serialNum = TxtEditSerialNum.Text;
             var templateItem = (dynamic)CmbEditTemplate.SelectedItem;
             string templatePath = templateItem.TemplateFile;
+
             string rawTemp = CmbEditWashTemp.SelectedItem != null 
-            ? ((dynamic)CmbEditWashTemp.SelectedItem).Temp 
-            : "";
+                ? ((dynamic)CmbEditWashTemp.SelectedItem).Temp 
+                : "";
             string formattedTemp = FormatWashTemp(rawTemp);
+
             GenerateOutput(templatePath, new Dictionary<string, string>
-{
-    { "<<serienumber>>", serialNum },
-    { "<<standard>>", CmbEditStandard.SelectedItem != null ? ((dynamic)CmbEditStandard.SelectedItem).Name : "" },
-    { "<<udi>>", CmbEditUdi.SelectedItem != null ? ((dynamic)CmbEditUdi.SelectedItem).Udi : "" },
-    { "<<ref>>", CmbEditRef.SelectedItem != null ? ((dynamic)CmbEditRef.SelectedItem).Ref : "" },
-    { "<<raps_batch>>", CmbEditRaps.SelectedItem != null ? ((dynamic)CmbEditRaps.SelectedItem).Batch : "" },
-    { "<<textile_batch>>", CmbEditTextile.SelectedItem != null ? ((dynamic)CmbEditTextile.SelectedItem).Batch : "" },
-    { "<<wash_temp>>", formattedTemp }, // Formateret med °C
-    { "<<created>>", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") },
-    { "<<note>>", TxtEditSerialNote.Text.Trim() }
-}, serialNum);
+            {
+                { "<<serienumber>>", serialNum },
+                { "<<standard>>", CmbEditStandard.SelectedItem != null ? ((dynamic)CmbEditStandard.SelectedItem).Name : "" },
+                { "<<udi>>", CmbEditUdi.SelectedItem != null ? ((dynamic)CmbEditUdi.SelectedItem).Udi : "" },
+                { "<<ref>>", CmbEditRef.SelectedItem != null ? ((dynamic)CmbEditRef.SelectedItem).Ref : "" },
+                { "<<raps_batch>>", CmbEditRaps.SelectedItem != null ? ((dynamic)CmbEditRaps.SelectedItem).Batch : "" },
+                { "<<textile_batch>>", CmbEditTextile.SelectedItem != null ? ((dynamic)CmbEditTextile.SelectedItem).Batch : "" },
+                { "<<wash_temp>>", formattedTemp },
+                { "<<created>>", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") },
+                { "<<note>>", TxtEditSerialNote.Text.Trim() }
+            }, serialNum);
 
             string outFolder = GetOutputFolder();
-            var resDialog = new ResultDialog($"Vektorfil for {serialNum} blev genskabt!", outFolder) { Owner = this };
+            var resDialog = new ResultDialog($"Fil for {serialNum} blev genskabt!", outFolder) { Owner = this };
             resDialog.ShowDialog();
         }
 
@@ -742,13 +866,18 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
         private void MenuAbout_Click(object sender, RoutedEventArgs e) => 
             MessageBox.Show("Serienummer- og Vektorgenerator", "Om", MessageBoxButton.OK, MessageBoxImage.Information);
 
+        private async void MenuCheckUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            await UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: false);
+        }
+
         private void BtnExportCsv_Click(object sender, RoutedEventArgs e)
         {
             var saveDialog = new SaveFileDialog
             {
                 Title = "Gem Serienumre som CSV",
                 Filter = "CSV-fil (*.csv)|*.csv|Alle filer (*.*)|*.*",
-                FileName = $"serienumre_eksport_{DateTime.Now:yyyyMMdd_HHmm}.csv",
+                FileName = $"serienumre_{DateTime.Now:yyyyMMdd_HHmm}.csv",
                 DefaultExt = ".csv"
             };
 
@@ -757,14 +886,16 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
             try
             {
                 var csvBuilder = new StringBuilder();
-                csvBuilder.AppendLine("ID;Serienummer;Standard;UDI;REF;Raps Batch;Tekstil Batch;Vasketemperatur;Skabelon;Note;Aktiv;Oprettet");
+                // Eksport uden ID-kolonner
+                csvBuilder.AppendLine("Serienummer;Kunde;Telefon;Standard;UDI;REF;Raps Batch;Tekstil Batch;Vasketemperatur;Skabelon;Note;Aktiv;Oprettet");
 
                 using var conn = new SqliteConnection(_connectionString);
                 conn.Open();
 
                 string query = @"
-                    SELECT s.id, 
-                           s.seriel_num, 
+                    SELECT s.seriel_num, 
+                           COALESCE(s.customer_name, '') as customer_name,
+                           COALESCE(s.customer_phone, '') as customer_phone,
                            COALESCE(std.name, '') as standard, 
                            COALESCE(u.udi, '') as udi, 
                            COALESCE(r.ref, '') as ref, 
@@ -791,20 +922,21 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
                 int exportCount = 0;
                 while (reader.Read())
                 {
-                    string id = reader.GetInt32(0).ToString();
-                    string serial = EscapeCsvField(reader.GetString(1));
-                    string standard = EscapeCsvField(reader.GetString(2));
-                    string udi = EscapeCsvField(reader.GetString(3));
-                    string refVal = EscapeCsvField(reader.GetString(4));
-                    string raps = EscapeCsvField(reader.GetString(5));
-                    string textile = EscapeCsvField(reader.GetString(6));
-                    string washTemp = EscapeCsvField(reader.GetString(7));
-                    string template = EscapeCsvField(reader.GetString(8));
-                    string note = EscapeCsvField(reader.GetString(9));
-                    string active = reader.GetInt32(10) == 1 ? "Ja" : "Nej";
-                    string created = EscapeCsvField(reader.GetString(11));
+                    string serial = EscapeCsvField(reader.GetString(0));
+                    string cname = EscapeCsvField(reader.GetString(1));
+                    string cphone = EscapeCsvField(reader.GetString(2));
+                    string standard = EscapeCsvField(reader.GetString(3));
+                    string udi = EscapeCsvField(reader.GetString(4));
+                    string refVal = EscapeCsvField(reader.GetString(5));
+                    string raps = EscapeCsvField(reader.GetString(6));
+                    string textile = EscapeCsvField(reader.GetString(7));
+                    string washTemp = EscapeCsvField(reader.GetString(8));
+                    string template = EscapeCsvField(reader.GetString(9));
+                    string note = EscapeCsvField(reader.GetString(10));
+                    string active = reader.GetInt32(11) == 1 ? "Ja" : "Nej";
+                    string created = EscapeCsvField(reader.GetString(12));
 
-                    csvBuilder.AppendLine($"{id};{serial};{standard};{udi};{refVal};{raps};{textile};{washTemp};{template};{note};{active};{created}");
+                    csvBuilder.AppendLine($"{serial};{cname};{cphone};{standard};{udi};{refVal};{raps};{textile};{washTemp};{template};{note};{active};{created}");
                     exportCount++;
                 }
 
@@ -815,66 +947,81 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Der opstod en fejl under eksporten: {ex.Message}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Fejl under eksport: {ex.Message}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-        private string GetOutputFormat()
-{
-    try
-    {
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
 
-        using var cmd = new SqliteCommand("SELECT value FROM settings WHERE key = 'output_format' LIMIT 1;", conn);
-        var res = cmd.ExecuteScalar();
-        if (res != null && !string.IsNullOrWhiteSpace(res.ToString()))
+        private void BtnBackupDb_Click(object sender, RoutedEventArgs e)
         {
-            string fmt = res.ToString()!.Trim().ToLowerInvariant();
-            if (fmt == "pdf" || fmt == "png" || fmt == "svg")
-                return fmt;
-        }
-    }
-    catch { }
-
-    return "svg";
-}
-
-        private string FormatWashTemp(string? rawTemp)
-        {
-            if (string.IsNullOrWhiteSpace(rawTemp)) return "";
-
-            string trimmed = rawTemp.Trim();
-
-            // Hvis den allerede indeholder grader-tegnet, beholdes den som den er
-            if (trimmed.Contains("°")) return trimmed;
-
-            // Hvis den slutter på C (f.eks. "60C"), indsættes ° før C -> "60°C"
-            if (trimmed.EndsWith("C", StringComparison.OrdinalIgnoreCase))
+            var saveDialog = new SaveFileDialog
             {
-                return trimmed.Substring(0, trimmed.Length - 1).TrimEnd() + "°C";
-            }
+                Title = "Gem database-sikkerhedskopi",
+                Filter = "SQLite Database (*.db)|*.db|Alle filer (*.*)|*.*",
+                FileName = $"production_backup_{DateTime.Now:yyyyMMdd_HHmm}.db"
+            };
 
-            // Hvis det bare er et tal eller tekst (f.eks. "60"), tilføjes "°C"
-            return $"{trimmed}°";
-        }
-        private float GetPngDpi()
-        {
+            if (saveDialog.ShowDialog() != true) return;
+
             try
             {
-                using var conn = new SqliteConnection(_connectionString);
-                conn.Open();
+                using var sourceConn = new SqliteConnection(_connectionString);
+                sourceConn.Open();
 
-                using var cmd = new SqliteCommand("SELECT value FROM settings WHERE key = 'png_dpi' LIMIT 1;", conn);
-                var res = cmd.ExecuteScalar();
-                if (res != null && float.TryParse(res.ToString(), out float dpi) && dpi > 0)
-                {
-                    return dpi;
-                }
+                using var destConn = new SqliteConnection($"Data Source={saveDialog.FileName};");
+                destConn.Open();
+
+                sourceConn.BackupDatabase(destConn);
+
+                MessageBox.Show($"Sikkerhedskopi gemt med succes:\n{saveDialog.FileName}", "Backup Færdig", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            catch { }
-
-            return 300f; // Standard printopløsning
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Fejl under backup: {ex.Message}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
+
+        private void BtnRestoreDb_Click(object sender, RoutedEventArgs e)
+        {
+            var openDialog = new OpenFileDialog
+            {
+                Title = "Vælg database-sikkerhedskopi, der skal indlæses",
+                Filter = "SQLite Database (*.db)|*.db|Alle filer (*.*)|*.*"
+            };
+
+            if (openDialog.ShowDialog() != true) return;
+
+            var confirm = MessageBox.Show(
+                "ADVARSEL: Gendannelse vil overskrive alle nuværende data med sikkerhedskopien!\n\nVil du fortsætte?",
+                "Bekræft gendannelse",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Exclamation);
+
+            if (confirm != MessageBoxResult.Yes) return;
+
+            try
+            {
+                SqliteConnection.ClearAllPools();
+
+                using var destConn = new SqliteConnection(_connectionString);
+                destConn.Open();
+
+                using var sourceConn = new SqliteConnection($"Data Source={openDialog.FileName};");
+                sourceConn.Open();
+
+                sourceConn.BackupDatabase(destConn);
+
+                RefreshAllDropdowns();
+                LoadRecentSerials();
+                LoadSerialsGrid();
+
+                MessageBox.Show("Databasen er blevet gendannet med succes!", "Gendannelse Færdig", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Fejl under gendannelse: {ex.Message}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private string EscapeCsvField(string field)
         {
             if (string.IsNullOrEmpty(field)) return "";
@@ -883,11 +1030,6 @@ private void GenerateOutput(string templateFilePath, Dictionary<string, string> 
                 return $"\"{field.Replace("\"", "\"\"")}\"";
             }
             return field;
-        }  
-
-        private async void MenuCheckUpdate_Click(object sender, RoutedEventArgs e)
-{
-    await UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: false);
-}  
+        }    
     }
 }

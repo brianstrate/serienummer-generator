@@ -82,73 +82,129 @@
             </TabItem>
 
             <!-- FANE 2: ADMINISTRER & RET SERIENUMRE -->
-            <TabItem Header="Administrer Serienumre">
-                <Grid Margin="12">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="1.2*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+<TabItem Header="Administrer Serienumre">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="1.2*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-                    <DockPanel Grid.Row="0" Margin="0,0,0,8">
-                        <TextBlock Text="Oversigt over registrerede serienumre" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        <Button x:Name="BtnExportCsv" Content="Eksportér til CSV" Width="140" Height="28" 
-                                HorizontalAlignment="Right" Click="BtnExportCsv_Click" Cursor="Hand"
-                                Background="#2563EB" Foreground="White" FontWeight="SemiBold"/>
-                    </DockPanel>
+        <!-- Topbjælke: Søgning, CSV og Backup/Gendan -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                <Label Content="Søg:" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBox x:Name="TxtSearch" Width="260" Height="28" VerticalContentAlignment="Center"
+                         Margin="6,0,0,0" ToolTip="Søg på serienummer, kundenavn eller telefon..."
+                         TextChanged="TxtSearch_TextChanged"/>
+            </StackPanel>
 
-                    <DataGrid x:Name="GridSerials" Grid.Row="1" AutoGenerateColumns="True" IsReadOnly="True" 
-                              SelectionMode="Single" SelectionChanged="GridSerials_SelectionChanged" Margin="0,0,0,10"/>
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                <Button x:Name="BtnExportCsv" Content="Eksportér CSV" Width="110" Height="28" 
+                        Margin="0,0,8,0" Click="BtnExportCsv_Click" Cursor="Hand"
+                        Background="#2563EB" Foreground="White" FontWeight="SemiBold"/>
+                <Button x:Name="BtnBackupDb" Content="Tag Backup (.db)" Width="120" Height="28" 
+                        Margin="0,0,8,0" Click="BtnBackupDb_Click" Cursor="Hand"
+                        Background="#0D9488" Foreground="White" FontWeight="SemiBold"/>
+                <Button x:Name="BtnRestoreDb" Content="Gendan DB..." Width="110" Height="28" 
+                        Click="BtnRestoreDb_Click" Cursor="Hand"
+                        Background="#DC2626" Foreground="White" FontWeight="SemiBold"/>
+            </StackPanel>
+        </DockPanel>
 
-                    <GroupBox Grid.Row="2" Header="Rediger valgt serienummer" Padding="10">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1*"/>
-                                <ColumnDefinition Width="1*"/>
-                            </Grid.ColumnDefinitions>
+        <!-- Tabel: Kun udvalgte kolonner, ingen ID'er, rød markering hvis inaktiv -->
+        <DataGrid x:Name="GridSerials" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" 
+                  SelectionMode="Single" SelectionChanged="GridSerials_SelectionChanged" Margin="0,0,0,10"
+                  HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeight="28">
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Style.Triggers>
+                        <!-- Hvis Active er falsk (0 / False), gøres rækken rød med tydelig tekst -->
+                        <DataTrigger Binding="{Binding active}" Value="0">
+                            <Setter Property="Background" Value="#FEE2E2"/>
+                            <Setter Property="Foreground" Value="#991B1B"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding active}" Value="False">
+                            <Setter Property="Background" Value="#FEE2E2"/>
+                            <Setter Property="Foreground" Value="#991B1B"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
 
-                            <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                    <Label Content="Serienummer:" FontWeight="Bold" Width="100"/>
-                                    <TextBox x:Name="TxtEditSerialNum" Width="160" Height="26" IsReadOnly="True" Background="#F3F4F6"/>
-                                    <CheckBox x:Name="ChkEditSerialActive" Content="Aktiv" VerticalAlignment="Center" Margin="16,0,0,0" IsChecked="True"/>
-                                </StackPanel>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Serienummer" Binding="{Binding seriel_num}" FontWeight="Bold" Width="130"/>
+                <DataGridTextColumn Header="Standard" Binding="{Binding standard}" Width="150"/>
+                <DataGridTextColumn Header="UDI" Binding="{Binding udi}" Width="150"/>
+                <DataGridTextColumn Header="REF" Binding="{Binding ref}" Width="110"/>
+                <DataGridTextColumn Header="Raps Batch" Binding="{Binding raps_batch}" Width="110"/>
+                <DataGridTextColumn Header="Stof Batch" Binding="{Binding textile_batch}" Width="110"/>
+                <DataGridTextColumn Header="Vasketemp." Binding="{Binding wash_temp}" Width="95"/>
+                <DataGridTextColumn Header="Kunde" Binding="{Binding customer_name}" Width="140"/>
+                <DataGridTextColumn Header="Telefon" Binding="{Binding customer_phone}" Width="110"/>
+                <DataGridTextColumn Header="Note" Binding="{Binding note}" Width="*"/>
+                <DataGridTextColumn Header="Oprettet" Binding="{Binding created}" Width="140"/>
+            </DataGrid.Columns>
+        </DataGrid>
 
-                                <Label Content="Standard:"/>
-                                <ComboBox x:Name="CmbEditStandard" DisplayMemberPath="Name" SelectedValuePath="Id" Height="26"/>
+        <!-- Redigeringsboks for valgt serienummer -->
+        <GroupBox Grid.Row="2" Header="Rediger valgt serienummer" Padding="10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1*"/>
+                    <ColumnDefinition Width="1*"/>
+                </Grid.ColumnDefinitions>
 
-                                <Label Content="UDI:" Margin="0,4,0,0"/>
-                                <ComboBox x:Name="CmbEditUdi" DisplayMemberPath="Udi" SelectedValuePath="Id" Height="26"/>
+                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <Label Content="Serienummer:" FontWeight="Bold" Width="100"/>
+                        <TextBox x:Name="TxtEditSerialNum" Width="160" Height="26" IsReadOnly="True" Background="#F3F4F6"/>
+                        <CheckBox x:Name="ChkEditSerialActive" Content="Aktiv" VerticalAlignment="Center" Margin="16,0,0,0" IsChecked="True"/>
+                    </StackPanel>
 
-                                <Label Content="REF:" Margin="0,4,0,0"/>
-                                <ComboBox x:Name="CmbEditRef" DisplayMemberPath="Ref" SelectedValuePath="Id" Height="26"/>
-                            </StackPanel>
+                    <Label Content="Kunde Navn:" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                    <TextBox x:Name="TxtEditCustomerName" Height="26"/>
 
-                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                <Label Content="Raps Batch:"/>
-                                <ComboBox x:Name="CmbEditRaps" DisplayMemberPath="Batch" SelectedValuePath="Id" Height="26"/>
+                    <Label Content="Kunde Telefon:" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                    <TextBox x:Name="TxtEditCustomerPhone" Height="26"/>
 
-                                <Label Content="Tekstil Batch:" Margin="0,4,0,0"/>
-                                <ComboBox x:Name="CmbEditTextile" DisplayMemberPath="Batch" SelectedValuePath="Id" Height="26"/>
+                    <Label Content="Standard:" Margin="0,4,0,0"/>
+                    <ComboBox x:Name="CmbEditStandard" DisplayMemberPath="Name" SelectedValuePath="Id" Height="26"/>
 
-                                <Label Content="Vasketemperatur:" Margin="0,4,0,0"/>
-                                <ComboBox x:Name="CmbEditWashTemp" DisplayMemberPath="Temp" SelectedValuePath="Id" Height="26"/>
+                    <Label Content="UDI:" Margin="0,4,0,0"/>
+                    <ComboBox x:Name="CmbEditUdi" DisplayMemberPath="Udi" SelectedValuePath="Id" Height="26"/>
 
-                                <Label Content="Skabelon:" Margin="0,4,0,0"/>
-                                <ComboBox x:Name="CmbEditTemplate" DisplayMemberPath="TemplateFile" SelectedValuePath="Id" Height="26"/>
+                    <Label Content="REF:" Margin="0,4,0,0"/>
+                    <ComboBox x:Name="CmbEditRef" DisplayMemberPath="Ref" SelectedValuePath="Id" Height="26"/>
+                </StackPanel>
 
-                                <Label Content="Note:" Margin="0,4,0,0"/>
-                                <TextBox x:Name="TxtEditSerialNote" Height="26"/>
+                <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                    <Label Content="Raps Batch:"/>
+                    <ComboBox x:Name="CmbEditRaps" DisplayMemberPath="Batch" SelectedValuePath="Id" Height="26"/>
 
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                                    <Button Content="Gendan Vektorfil" Width="130" Height="30" Margin="0,0,8,0" Click="BtnRegenerateVector_Click" Cursor="Hand"/>
-                                    <Button Content="Gem Ændringer" Width="120" Height="30" Background="#16A34A" Foreground="White" FontWeight="Bold" Click="BtnUpdateSerial_Click" Cursor="Hand"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Grid>
-                    </GroupBox>
-                </Grid>
-            </TabItem>
+                    <Label Content="Tekstil Batch:" Margin="0,4,0,0"/>
+                    <ComboBox x:Name="CmbEditTextile" DisplayMemberPath="Batch" SelectedValuePath="Id" Height="26"/>
+
+                    <Label Content="Vasketemperatur:" Margin="0,4,0,0"/>
+                    <ComboBox x:Name="CmbEditWashTemp" DisplayMemberPath="Temp" SelectedValuePath="Id" Height="26"/>
+
+                    <Label Content="Skabelon:" Margin="0,4,0,0"/>
+                    <ComboBox x:Name="CmbEditTemplate" DisplayMemberPath="TemplateFile" SelectedValuePath="Id" Height="26"/>
+
+                    <Label Content="Note:" Margin="0,4,0,0"/>
+                    <TextBox x:Name="TxtEditSerialNote" Height="26"/>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                        <Button Content="Gendan Vektorfil" Width="130" Height="30" Margin="0,0,8,0" Click="BtnRegenerateVector_Click" Cursor="Hand"/>
+                        <Button Content="Gem Ændringer" Width="120" Height="30" Background="#16A34A" Foreground="White" FontWeight="Bold" Click="BtnUpdateSerial_Click" Cursor="Hand"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </GroupBox>
+    </Grid>
+</TabItem>
 
             <!-- FANE 3: STAMDATA & RETTIGELSER -->
             <TabItem Header="Stamdata Indstillinger">
