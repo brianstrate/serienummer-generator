@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Data.Sqlite;
 using Microsoft.Win32;
+using System.Reflection;
 
 namespace seriel_number_generator
 {
@@ -17,6 +18,18 @@ namespace seriel_number_generator
         public MainWindow()
         {
             InitializeComponent();
+
+            // Hent versionsnummer fra assembly (udfyldes automatisk af MinVer)
+    var assembly = Assembly.GetExecutingAssembly();
+    var version = assembly.GetName().Version;
+    
+    // Formater versionsnummeret (f.eks. v1.1.0)
+    string appVersion = version != null 
+        ? $"v{version.Major}.{version.Minor}.{version.Build}" 
+        : "v1.0.0";
+
+    // Opdater titellinjen dynamisk
+    this.Title = $"Produktion & Serienummer Generator - {appVersion}";
 
             // Gemmer databasen i ProgramData så programmet virker uden admin-rettigheder efter installation
             string commonFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
@@ -657,7 +670,7 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
         }
 
         private void MenuAbout_Click(object sender, RoutedEventArgs e) => 
-            MessageBox.Show("Serienummer- og Vektorgenerator v1.4", "Om", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("Serienummer- og Vektorgenerator", "Om", MessageBoxButton.OK, MessageBoxImage.Information);
 
         private void BtnExportCsv_Click(object sender, RoutedEventArgs e)
         {

@@ -12,7 +12,7 @@ namespace seriel_number_generator
     public static class UpdateChecker
     {
         // Tilpas med dit GitHub-brugernavn og repo-navn
-        private const string RepoOwner = "DIT_BRUGERNAVN";
+        private const string RepoOwner = "brianstrate";
         private const string RepoName = "serienummer-generator";
 
         public static async Task CheckForUpdatesAsync(bool silentIfUpToDate = true)

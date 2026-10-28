@@ -1,6 +1,10 @@
+#ifndef MyAppVersion
+#define MyAppVersion "1.0.0"
+#endif
+
 [Setup]
 AppName=Serienummer og Vaskemærker Generator
-AppVersion=1.4
+AppVersion={#MyAppVersion}
 DefaultDirName={autopf}\SerienummerGenerator
 DefaultGroupName=Serienummer Generator
 OutputDir=OutputInstaller
