@@ -21,6 +21,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <PackageReference Include="MinVer" Version="8.0.0" PrivateAssets="all" />
+    <PackageReference Include="SkiaSharp" Version="4.154.0" />
+    <PackageReference Include="Svg.Skia" Version="5.2.3" />
   </ItemGroup>
 
 </Project>

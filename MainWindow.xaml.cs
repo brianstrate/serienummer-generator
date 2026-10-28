@@ -8,6 +8,8 @@ using System.Windows.Controls;
 using Microsoft.Data.Sqlite;
 using Microsoft.Win32;
 using System.Reflection;
+using SkiaSharp;
+using Svg.Skia;
 
 namespace seriel_number_generator
 {
@@ -127,6 +129,10 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
             {
                 using var checkCmd = new SqliteCommand("INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('output_folder', 'output', 'Standard output mappe til vektorfiler', 1, datetime('now'));", conn);
                 checkCmd.ExecuteNonQuery();
+                using var checkFormatCmd = new SqliteCommand(
+    "INSERT OR IGNORE INTO settings (key, value, note, active, created) VALUES ('output_format', 'svg', 'Output format (svg, pdf, png)', 1, datetime('now'));", 
+    conn);
+checkFormatCmd.ExecuteNonQuery();
             }
             catch { }
 
@@ -268,7 +274,7 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
                         cmd.ExecuteNonQuery();
                     }
 
-                    GenerateVectorOutput(templatePath, new Dictionary<string, string>
+                    GenerateOutput(templatePath, new Dictionary<string, string>
                     {
                         { "<<serienumber>>", serialNum },
                         { "<<standard>>", ((dynamic)CmbStandard.SelectedItem).Name },
@@ -301,34 +307,82 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
             }
         }
 
-        private void GenerateVectorOutput(string templateFilePath, Dictionary<string, string> tokens, string serialNum)
+    
+
+private void GenerateOutput(string templateFilePath, Dictionary<string, string> tokens, string serialNum)
+{
+    if (!File.Exists(templateFilePath))
+    {
+        MessageBox.Show($"Skabelonfilen '{templateFilePath}' blev ikke fundet.", "Advarsel", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return;
+    }
+
+    // 1. Udskift tokens i SVG-indholdet
+    string svgContent = File.ReadAllText(templateFilePath);
+    foreach (var kvp in tokens)
+    {
+        svgContent = svgContent.Replace(kvp.Key, kvp.Value);
+        string escapedKey = kvp.Key.Replace("<", "&lt;").Replace(">", "&gt;");
+        svgContent = svgContent.Replace(escapedKey, kvp.Value);
+    }
+
+    string targetFolder = GetOutputFolder();
+    Directory.CreateDirectory(targetFolder);
+
+    string format = GetOutputFormat();
+    string outPath = Path.Combine(targetFolder, $"{serialNum}.{format}");
+
+    if (format == "svg")
+    {
+        // Ren SVG eksport
+        File.WriteAllText(outPath, svgContent, Encoding.UTF8);
+    }
+    else
+    {
+        // Indlæs den færdige SVG i Skia-motoren
+        var svg = new SKSvg();
+        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(svgContent)))
         {
-            if (!File.Exists(templateFilePath))
-            {
-                MessageBox.Show($"Skabelonfilen '{templateFilePath}' blev ikke fundet. Vektorfil blev ikke genereret.", "Advarsel", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            string content = File.ReadAllText(templateFilePath);
-
-            foreach (var kvp in tokens)
-            {
-                content = content.Replace(kvp.Key, kvp.Value);
-
-                string escapedKey = kvp.Key.Replace("<", "&lt;").Replace(">", "&gt;");
-                content = content.Replace(escapedKey, kvp.Value);
-            }
-
-            string targetFolder = GetOutputFolder();
-            Directory.CreateDirectory(targetFolder);
-
-            string ext = Path.GetExtension(templateFilePath);
-            if (string.IsNullOrEmpty(ext)) ext = ".svg";
-
-            string outPath = Path.Combine(targetFolder, $"{serialNum}{ext}");
-            File.WriteAllText(outPath, content);
+            svg.Load(stream);
         }
 
+        if (svg.Picture == null)
+        {
+            MessageBox.Show("Kunne ikke parse SVG til konvertering.", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        var bounds = svg.Picture.CullRect;
+        int width = (int)Math.Ceiling(bounds.Width);
+        int height = (int)Math.Ceiling(bounds.Height);
+
+        if (format == "pdf")
+        {
+            // Vektor PDF generering
+            using var fileStream = File.Create(outPath);
+            using var document = SKDocument.CreatePdf(fileStream);
+            using var canvas = document.BeginPage(width, height);
+            
+            canvas.DrawPicture(svg.Picture);
+            document.EndPage();
+            document.Close();
+        }
+        else if (format == "png")
+        {
+            // Højopløsnings rasterbillede (PNG)
+            using var bitmap = new SKBitmap(width, height);
+            using var canvas = new SKCanvas(bitmap);
+            canvas.Clear(SKColors.Transparent);
+            canvas.DrawPicture(svg.Picture);
+            canvas.Flush();
+
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            using var fileStream = File.Create(outPath);
+            data.SaveTo(fileStream);
+        }
+    }
+}
         // --- STAMDATA & HJÆLPEFUNKTIONER ---
         private void PopulateTableDropdown()
         {
@@ -627,7 +681,7 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
             var templateItem = (dynamic)CmbEditTemplate.SelectedItem;
             string templatePath = templateItem.TemplateFile;
 
-            GenerateVectorOutput(templatePath, new Dictionary<string, string>
+            GenerateOutput(templatePath, new Dictionary<string, string>
             {
                 { "<<serienumber>>", serialNum },
                 { "<<standard>>", CmbEditStandard.SelectedItem != null ? ((dynamic)CmbEditStandard.SelectedItem).Name : "" },
@@ -748,6 +802,26 @@ _ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
                 MessageBox.Show($"Der opstod en fejl under eksporten: {ex.Message}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+        private string GetOutputFormat()
+{
+    try
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+
+        using var cmd = new SqliteCommand("SELECT value FROM settings WHERE key = 'output_format' LIMIT 1;", conn);
+        var res = cmd.ExecuteScalar();
+        if (res != null && !string.IsNullOrWhiteSpace(res.ToString()))
+        {
+            string fmt = res.ToString()!.Trim().ToLowerInvariant();
+            if (fmt == "pdf" || fmt == "png" || fmt == "svg")
+                return fmt;
+        }
+    }
+    catch { }
+
+    return "svg";
+}
 
         private string EscapeCsvField(string field)
         {
