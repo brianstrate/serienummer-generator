@@ -11,6 +11,7 @@
             </MenuItem>
             <MenuItem Header="_Hjælp">
                 <MenuItem Header="_Skabelon Variabler..." Click="MenuTemplateHelp_Click"/>
+                <MenuItem Header="Søg efter opdateringer..." Click="MenuCheckUpdate_Click"/>
                 <Separator/>
                 <MenuItem Header="_Om" Click="MenuAbout_Click"/>
             </MenuItem>

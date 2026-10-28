@@ -38,6 +38,8 @@ namespace seriel_number_generator
             LoadLastUsedData();
             LoadRecentSerials();
             LoadSerialsGrid();
+            // Kører i baggrunden uden at blokere opstarten af brugerfladen
+_ = UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: true);
         }
 
         private void PopulateMonthDropdown()
@@ -742,6 +744,11 @@ namespace seriel_number_generator
                 return $"\"{field.Replace("\"", "\"\"")}\"";
             }
             return field;
-        }    
+        }  
+
+        private async void MenuCheckUpdate_Click(object sender, RoutedEventArgs e)
+{
+    await UpdateChecker.CheckForUpdatesAsync(silentIfUpToDate: false);
+}  
     }
 }
