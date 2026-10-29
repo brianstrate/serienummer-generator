@@ -12,6 +12,7 @@
     <MinVerTagPrefix>v</MinVerTagPrefix>
     <!-- Standardversion hvis der endnu ikke findes noget tag i repoet -->
     <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
+    <MinVerAutoIncrement>minor</MinVerAutoIncrement>
   </PropertyGroup>
 
   <ItemGroup>

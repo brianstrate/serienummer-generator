@@ -36,7 +36,9 @@ namespace seriel_number_generator
                 if (!Version.TryParse(cleanTag, out Version? latestVersion))
                     return;
 
-                Version currentVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 0, 0);
+                string location = Environment.ProcessPath ?? Assembly.GetExecutingAssembly().Location;
+var fvi = FileVersionInfo.GetVersionInfo(location);
+Version currentVersion = new Version(fvi.FileMajorPart, fvi.FileMinorPart, fvi.FileBuildPart);
 
                 // Tjek om GitHub-versionen er højere end den kørende version
                 if (latestVersion > currentVersion)

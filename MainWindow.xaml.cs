@@ -22,17 +22,17 @@ namespace seriel_number_generator
         {
             InitializeComponent();
 
-            // Hent versionsnummer fra assembly (udfyldes automatisk af MinVer)
-            var assembly = Assembly.GetExecutingAssembly();
-            var version = assembly.GetName().Version;
-            
-            // Formater versionsnummeret (f.eks. v1.1.0)
-            string appVersion = version != null 
-                ? $"v{version.Major}.{version.Minor}.{version.Build}" 
-                : "v1.0.0";
+           // Hent den reelle filversion (som MinVer sætter til 1.2.0.0)
+    string location = Environment.ProcessPath ?? Assembly.GetExecutingAssembly().Location;
+    var fvi = FileVersionInfo.GetVersionInfo(location);
+    
+    // Udlæser Major, Minor og Build fra FileVersion (f.eks. 1.2.0)
+    string appVersion = (fvi.FileMajorPart > 0 || fvi.FileMinorPart > 0 || fvi.FileBuildPart > 0)
+        ? $"v{fvi.FileMajorPart}.{fvi.FileMinorPart}.{fvi.FileBuildPart}"
+        : "v1.2.0";
 
-            // Opdater titellinjen dynamisk
-            this.Title = $"Produktion & Serienummer Generator - {appVersion}";
+    // Opdater titellinjen
+    this.Title = $"Serienummer og Vaskemærker Generator - RestfulBlanket - {appVersion}";
 
             // Gemmer databasen i ProgramData så programmet virker uden admin-rettigheder efter installation
             string commonFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
