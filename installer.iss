@@ -1,14 +1,21 @@
 #ifndef MyAppVersion
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.2.0"
 #endif
 
 [Setup]
 AppName=Serienummer og Vaskemærker Generator
 AppVersion={#MyAppVersion}
+
+; Sætter versionsnummeret direkte ind i filnavnet (f.eks. SerienummerGenerator_Setup_v1.2.0.exe)
+OutputBaseFilename=SerienummerGenerator_Setup_v{#MyAppVersion}
+
+; Sætter versionsnummer i Windows-filens egenskaber/detaljer (Højreklik -> Egenskaber -> Detaljer)
+VersionInfoVersion={#MyAppVersion}
+VersionInfoTextVersion={#MyAppVersion}
+
 DefaultDirName={autopf}\SerienummerGenerator
 DefaultGroupName=Serienummer Generator
 OutputDir=OutputInstaller
-OutputBaseFilename=SerienummerGenerator_Setup
 SetupIconFile=app.ico
 Compression=lzma
 SolidCompression=yes
