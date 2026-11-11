@@ -234,14 +234,8 @@ namespace seriel_number_generator
             // Hvis den allerede har grader-tegnet
             if (trimmed.Contains("°")) return trimmed;
 
-            // Hvis den slutter på C (f.eks. "60C"), indsættes ° før C -> "60°C"
-            if (trimmed.EndsWith("C", StringComparison.OrdinalIgnoreCase))
-            {
-                return trimmed.Substring(0, trimmed.Length - 1).TrimEnd() + "°C";
-            }
-
             // Standard: tilføj °C
-            return $"{trimmed}°C";
+            return $"{trimmed}°";
         }
 
         private void LoadLastUsedData()
